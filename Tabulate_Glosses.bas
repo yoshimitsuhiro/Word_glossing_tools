@@ -30,6 +30,7 @@ Sub Tabulate_Glosses()
     Dim combinedWithInMM As Single
     Dim usableWidthInPoints As Single
     Dim usableWidthInMM As Single
+    Dim widthFromEnd As Single
     
     Dim indentStr As String
     Dim indentInPoints As Single
@@ -220,7 +221,9 @@ Sub Tabulate_Glosses()
         Next i
         combinedWidthInPoints = combinedWidthInMM / 0.352778
         
-        usableWidthInMM = usableWidthInMM - combinedWidthInMM - 1
+        ' Get maximum usuable width
+        widthFromEnd = 0.1 ' Set width (in MM) from right margin; setting to 0 might cause issues; set to at least 0.1
+        usableWidthInMM = usableWidthInMM - combinedWidthInMM - widthFromEnd
         
         interval = usableWidthInMM / (numWordsPerLine - 1)
         
