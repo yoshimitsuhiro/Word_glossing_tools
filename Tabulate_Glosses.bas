@@ -2,7 +2,7 @@ Attribute VB_Name = "Tabulate_Glosses"
 Sub Tabulate_Glosses()
 
     ' Declare only used variables
-    Dim paras As Paragraphs
+    Dim selectionRange As Range
     Dim paraRanges() As Range
     Dim lineTexts() As String
     Dim splitWords() As Variant
@@ -14,11 +14,13 @@ Sub Tabulate_Glosses()
     Dim wordWidths() As Variant
     Dim maxWordWidths() As Single
     Dim tabStops() As Single
-    Dim i As Integer, j As Integer
-
+    Dim i As Integer, j As Integer, k As Integer
+    
     Dim wordRange As Range
     Dim rangeText As String
     Dim rangeLength As Integer
+    Dim char As String
+    Dim combiningChars As Integer
     Dim startChar As Integer
     Dim startPosition As Single
     Dim endPosition As Single
@@ -66,15 +68,14 @@ Sub Tabulate_Glosses()
         indentInPoints = indentInMM / 0.352778
     End If
 
-    Set paras = Selection.Paragraphs
-    numParas = paras.Count
+    Set selectionRange = Selection.Range
+
+    numParas = selectionRange.Paragraphs.Count
     ReDim paraRanges(1 To numParas)
 
     ' Format and clean each paragraph
     For i = 1 To numParas
-        Wait 0.1
-        DoEvents
-        Set paraRanges(i) = paras(i).Range
+        Set paraRanges(i) = selectionRange.Paragraphs(i).Range
         With paraRanges(i)
             .Paragraphs(1).tabStops.ClearAll
             With .Find
@@ -155,25 +156,45 @@ Sub Tabulate_Glosses()
 
     For i = 1 To numParas
         startChar = 0
+        
         With paraRanges(i).Paragraphs(1).Format
             firstIndentInPoints = .FirstLineIndent
             firstIndentInMM = firstIndentInPoints * 0.352778
             leftIndentInPoints = .LeftIndent
             leftIndentInMM = leftIndentInPoints * 0.352778
         End With
+        
         For j = 1 To numWordsPerLine
             Set wordRange = paraRanges(i).Duplicate
             wordLengths(i, j) = Len(words(i, j))
+            
+            'Test for combining characters
+            combiningChars = 0
+            For k = 1 To wordLengths(i, j)
+                char = Mid(words(i, j), k, 1)
+                If CombiningChar(char) Then
+                    combiningChars = combiningChars + 1
+                End If
+            Next k
+            wordLengths(i, j) = wordLengths(i, j) - combiningChars
+            
             wordRange.MoveStart wdCharacter, startChar
             wordRange.MoveEnd wdCharacter, wordRange.Characters.Count * -1 + wordLengths(i, j)
+            
             startPosition = wordRange.Information(wdHorizontalPositionRelativeToPage)
             wordRange.Collapse Direction:=wdCollapseEnd
             endPosition = wordRange.Information(wdHorizontalPositionRelativeToPage)
+            
             widthInPoints = endPosition - startPosition
             widthInMM = widthInPoints * 0.352778
             wordWidths(i, j) = widthInMM
-            If j = 1 Then wordWidths(i, j) = wordWidths(i, j) - leftIndentInMM - firstIndentInMM
+            
+            If j = 1 Then
+                wordWidths(i, j) = wordWidths(i, j) - leftIndentInMM - firstIndentInMM
+            End If
+            
             startChar = startChar + wordLengths(i, j) + 1
+            currentPos = wordStart + wordLengths(i, j)
         Next j
     Next i
 
@@ -266,6 +287,12 @@ Sub Tabulate_Glosses()
     DoEvents
 
 End Sub
+
+Function CombiningChar(char As String) As Boolean
+    Dim code As Long
+    code = AscW(char)
+    CombiningChar = (code >= &H300 And code <= &H36F)
+End Function
 
 Sub Get_Usable_Width(ByRef usableWidthInPoints As Single, ByRef usableWidthInMM As Single)
     Dim section As section
