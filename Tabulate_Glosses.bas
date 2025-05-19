@@ -45,6 +45,7 @@ Sub Tabulate_Glosses()
     Dim leftIndentInMM As Single
 
     Dim result As Boolean
+    Dim debugMode As Boolean
     Dim output As String
 
     Application.ScreenUpdating = False
@@ -138,26 +139,35 @@ Sub Tabulate_Glosses()
             words(i, j) = splitWords(i)(j - 1)
         Next j
     Next i
-
-'    ' Output word list
-'    output = "Words:" & vbCrLf
-'    For i = 1 To numParas
-'        output = output & "Line " & i & ": "
-'        For j = 1 To numWordsPerLine
-'            output = output & words(i, j) & " "
-'        Next j
-'        output = output & vbCrLf
-'    Next i
-'
-'    Tabulate_Glosses_Results.ShowText output
+    
+    debugMode = False
+    
+    If debugMode Then
+        ' Output word list
+        output = "Words:" & vbCrLf
+        For i = 1 To numParas
+            output = output & "Line " & i & ": "
+            For j = 1 To numWordsPerLine
+                If Not j = numWordsPerLine Then
+                    output = output & words(i, j) & " / "
+                Else
+                    output = output & words(i, j) & vbCrLf
+                End If
+            Next j
+        Next i
+    
+        Tabulate_Glosses_Results.ShowText output
+    End If
 
     ' Get word lengths (in characters) and widths (in MM)
     ReDim wordLengths(1 To numParas, 1 To numWordsPerLine)
     ReDim wordWidths(1 To numParas, 1 To numWordsPerLine)
 
+    ' Iterate through each line of text (i)
     For i = 1 To numParas
         startChar = 0
         
+        ' Get indent
         With paraRanges(i).Paragraphs(1).Format
             firstIndentInPoints = .FirstLineIndent
             firstIndentInMM = firstIndentInPoints * 0.352778
@@ -165,11 +175,14 @@ Sub Tabulate_Glosses()
             leftIndentInMM = leftIndentInPoints * 0.352778
         End With
         
+        ' Iterate through each word (j)
         For j = 1 To numWordsPerLine
             Set wordRange = paraRanges(i).Duplicate
+            
+            ' Calculate word width
             wordLengths(i, j) = Len(words(i, j))
             
-            'Test for combining characters
+            ' Test for combining characters
             combiningChars = 0
             For k = 1 To wordLengths(i, j)
                 char = Mid(words(i, j), k, 1)
@@ -179,13 +192,16 @@ Sub Tabulate_Glosses()
             Next k
             wordLengths(i, j) = wordLengths(i, j) - combiningChars
             
+            ' Move start of selection the end of word to calculate word width
             wordRange.MoveStart wdCharacter, startChar
             wordRange.MoveEnd wdCharacter, wordRange.Characters.Count * -1 + wordLengths(i, j)
             
+            ' Get start and end position of word
             startPosition = wordRange.Information(wdHorizontalPositionRelativeToPage)
             wordRange.Collapse Direction:=wdCollapseEnd
             endPosition = wordRange.Information(wdHorizontalPositionRelativeToPage)
             
+            ' Calcualte word width
             widthInPoints = endPosition - startPosition
             widthInMM = widthInPoints * 0.352778
             wordWidths(i, j) = widthInMM
@@ -207,13 +223,14 @@ Sub Tabulate_Glosses()
         Next i
     Next j
 
+    ' Auto calculate interval
     If intervalStr = "Auto" Then
         ' Get usable width of page
         Get_Usable_Width usableWidthInPoints, usableWidthInMM
         usableWidthInPoints = usableWidthInPoints - indentInPoints
         usableWidthInMM = usableWidthInMM - indentInMM
         
-        ' Auto calculate interval
+        ' Add widest word widths of each element
         combinedWidthInPoints = 0
         combinedWidthInMM = 0
         For i = 1 To numWordsPerLine
@@ -221,10 +238,11 @@ Sub Tabulate_Glosses()
         Next i
         combinedWidthInPoints = combinedWidthInMM / 0.352778
         
-        ' Get maximum usuable width
-        widthFromEnd = 0.1 ' Set width (in MM) from right margin; setting to 0 might cause issues; set to at least 0.1
+        ' Get maximum usuable width (widest word widths - leftover space)
+        widthFromEnd = 1 ' Set width (in MM) from right margin; setting to less than 1 might cause issues
         usableWidthInMM = usableWidthInMM - combinedWidthInMM - widthFromEnd
         
+        ' Calculate interval
         interval = usableWidthInMM / (numWordsPerLine - 1)
         
         If interval > maxInterval Then
@@ -249,8 +267,6 @@ Sub Tabulate_Glosses()
     For i = 1 To numWordsPerLine
         If i = 1 Then
             output = output & "Element " & i & ": " & Round(indentInMM, 1) & " (indent)" & vbCrLf
-        ElseIf i = numWordsPerLine Then
-            output = output & "Element " & i & ": 0 (final element)"
         Else
             output = output & "Element " & i & ": " & Round(tabStops(i - 1), 1) & vbCrLf
         End If
@@ -278,6 +294,7 @@ Sub Tabulate_Glosses()
         End With
     Next i
 
+    ' Add tab stops
     For i = 1 To numParas
         For j = 1 To numWordsPerLine - 1
             paraRanges(i).ParagraphFormat.tabStops.Add _
