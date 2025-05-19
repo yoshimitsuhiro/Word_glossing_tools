@@ -5,6 +5,7 @@ Sub Tabulate_Glosses()
     Dim paras As Paragraphs
     Dim paraRanges() As Range
     Dim lineTexts() As String
+    Dim splitWords() As Variant
     Dim words() As Variant
     Dim numWords() As Integer
     Dim numWordsPerLine As Integer
@@ -23,11 +24,18 @@ Sub Tabulate_Glosses()
     Dim endPosition As Single
     Dim widthInPoints As Single
     Dim widthInMM As Single
+    Dim combinedWithInPoints As Single
+    Dim combinedWithInMM As Single
+    Dim usableWidthInPoints As Single
+    Dim usableWidthInMM As Single
     
     Dim indentStr As String
     Dim indentInPoints As Single
     Dim indentInMM As Single
     Dim interval As Single
+    Dim intervalStr As String
+    Dim autoInterval As Single
+    Dim maxInterval As Single
     Dim firstIndentInPoints As Single
     Dim firstIndentInMM As Single
     Dim leftIndentInPoints As Single
@@ -38,8 +46,13 @@ Sub Tabulate_Glosses()
 
     Application.ScreenUpdating = False
 
+    ' Set default values for indent and interval
+    indentStr = "Auto" ' Set to "Auto" to calculate indent based on first line
+    intervalStr = "Auto" ' Set to "Auto" to calculate widest interval without linewrapping
+    maxInterval = 10 ' The maximum interval auto will allow
+
     ' Prompt user for indent and interval
-    result = Tabulate_Glosses_Prompt.ShowForm(indentStr, interval)
+    result = Tabulate_Glosses_Prompt.ShowForm(indentStr, intervalStr, maxInterval)
     If Not result Then
         MsgBox "Operation cancelled."
         End
@@ -59,6 +72,7 @@ Sub Tabulate_Glosses()
 
     ' Format and clean each paragraph
     For i = 1 To numParas
+        Wait 0.1
         DoEvents
         Set paraRanges(i) = paras(i).Range
         With paraRanges(i)
@@ -94,11 +108,11 @@ Sub Tabulate_Glosses()
     Next i
 
     ' Split each line into words
-    ReDim words(1 To numParas)
+    ReDim splitWords(1 To numParas)
     ReDim numWords(1 To numParas)
     For i = 1 To numParas
-        words(i) = Split(lineTexts(i), " ")
-        numWords(i) = UBound(words(i)) + 1
+        splitWords(i) = Split(lineTexts(i), " ")
+        numWords(i) = UBound(splitWords(i)) + 1
     Next i
 
     ' Check to see if number of elements is the same for each line
@@ -115,6 +129,26 @@ Sub Tabulate_Glosses()
         Exit Sub
     End If
 
+    ' Create 2d array of lines and words
+    ReDim words(1 To numParas, 1 To numWordsPerLine)
+    For i = 1 To numParas
+        For j = 1 To numWordsPerLine
+            words(i, j) = splitWords(i)(j - 1)
+        Next j
+    Next i
+
+'    ' Output word list
+'    output = "Words:" & vbCrLf
+'    For i = 1 To numParas
+'        output = output & "Line " & i & ": "
+'        For j = 1 To numWordsPerLine
+'            output = output & words(i, j) & " "
+'        Next j
+'        output = output & vbCrLf
+'    Next i
+'
+'    Tabulate_Glosses_Results.ShowText output
+
     ' Get word lengths (in characters) and widths (in MM)
     ReDim wordLengths(1 To numParas, 1 To numWordsPerLine)
     ReDim wordWidths(1 To numParas, 1 To numWordsPerLine)
@@ -129,7 +163,7 @@ Sub Tabulate_Glosses()
         End With
         For j = 1 To numWordsPerLine
             Set wordRange = paraRanges(i).Duplicate
-            wordLengths(i, j) = Len(words(i)(j - 1))
+            wordLengths(i, j) = Len(words(i, j))
             wordRange.MoveStart wdCharacter, startChar
             wordRange.MoveEnd wdCharacter, wordRange.Characters.Count * -1 + wordLengths(i, j)
             startPosition = wordRange.Information(wdHorizontalPositionRelativeToPage)
@@ -144,13 +178,38 @@ Sub Tabulate_Glosses()
     Next i
 
     ' Find widest element in each line
-    ReDim maxWordWidths(1 To numWordsPerLine - 1)
-    For j = 1 To numWordsPerLine - 1
+    ReDim maxWordWidths(1 To numWordsPerLine)
+    For j = 1 To numWordsPerLine
         For i = 1 To numParas
             If wordWidths(i, j) > maxWordWidths(j) Then maxWordWidths(j) = wordWidths(i, j)
         Next i
     Next j
 
+    If intervalStr = "Auto" Then
+        ' Get usable width of page
+        Get_Usable_Width usableWidthInPoints, usableWidthInMM
+        usableWidthInPoints = usableWidthInPoints - indentInPoints
+        usableWidthInMM = usableWidthInMM - indentInMM
+        
+        ' Auto calculate interval
+        combinedWidthInPoints = 0
+        combinedWidthInMM = 0
+        For i = 1 To numWordsPerLine
+            combinedWidthInMM = combinedWidthInMM + maxWordWidths(i)
+        Next i
+        combinedWidthInPoints = combinedWidthInMM / 0.352778
+        
+        usableWidthInMM = usableWidthInMM - combinedWidthInMM - 1
+        
+        interval = usableWidthInMM / (numWordsPerLine - 1)
+        
+        If interval > maxInterval Then
+            interval = maxInterval
+        End If
+    Else
+        interval = CSng(intervalStr)
+    End If
+    
     ' Calculate tab stops
     ReDim tabStops(1 To numWordsPerLine - 1)
     For j = 1 To numWordsPerLine - 1
@@ -161,10 +220,16 @@ Sub Tabulate_Glosses()
         End If
     Next j
 
-    ' Output tab stops
-    output = "Tab Stops:" & vbCrLf
-    For i = 1 To UBound(tabStops)
-        output = output & "Element " & i & ": " & tabStops(i) & vbCrLf
+    ' Output results
+    output = "Interval = " & Round(interval, 1) & vbCrLf & vbCrLf & "Tab Stops:" & vbCrLf
+    For i = 1 To numWordsPerLine
+        If i = 1 Then
+            output = output & "Element " & i & ": " & Round(indentInMM, 1) & " (indent)" & vbCrLf
+        ElseIf i = numWordsPerLine Then
+            output = output & "Element " & i & ": 0 (final element)"
+        Else
+            output = output & "Element " & i & ": " & Round(tabStops(i - 1), 1) & vbCrLf
+        End If
     Next i
     MsgBox output
 
@@ -202,4 +267,29 @@ Sub Tabulate_Glosses()
 
 End Sub
 
+Sub Get_Usable_Width(ByRef usableWidthInPoints As Single, ByRef usableWidthInMM As Single)
+    Dim section As section
+    Dim totalWidthInPoints As Single
+    Dim leftMarginInPoints As Single
+    Dim rightMarginInPoints As Single
 
+    ' Get the section of the current selection
+    Set section = Selection.Range.Sections(1)
+
+    With section.PageSetup
+        totalWidthInPoints = .PageWidth
+        leftMarginInPoints = .LeftMargin
+        rightMarginInPoints = .RightMargin
+    End With
+
+    usableWidthInPoints = totalWidthInPoints - leftMarginInPoints - rightMarginInPoints
+    usableWidthInMM = usableWidthInPoints * 0.352778 ' Convert points to mm
+
+End Sub
+
+Sub Wait(ByVal Seconds As Single)
+    Dim CurrentTimer As Variant
+    CurrentTimer = Timer
+    Do While Timer < CurrentTimer + Seconds
+    Loop
+End Sub
